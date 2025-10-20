@@ -216,7 +216,7 @@ class BuildingUI:
                 
         return False
         
-    def draw(self, screen: pygame.Surface, building_system: BuildingSystem):
+    def draw(self, screen: pygame.Surface, building_system: BuildingSystem, scroll_offset: int = 0):
         """Dibujar interfaz de construcción"""
         if not self.is_open:
             return
@@ -226,13 +226,14 @@ class BuildingUI:
         overlay.fill((0, 0, 0, 128))
         screen.blit(overlay, (0, 0))
         
-        # Panel de construcción
-        panel_width = 400
-        panel_height = 300
+        # Panel de construcción con caja
+        panel_width = 600
+        panel_height = 500
         panel_x = (self.screen_width - panel_width) // 2
         panel_y = (self.screen_height - panel_height) // 2
         
-        pygame.draw.rect(screen, (50, 50, 50), (panel_x, panel_y, panel_width, panel_height))
+        # Dibujar fondo de la caja
+        pygame.draw.rect(screen, (30, 30, 30), (panel_x, panel_y, panel_width, panel_height))
         pygame.draw.rect(screen, (255, 255, 255), (panel_x, panel_y, panel_width, panel_height), 2)
         
         # Título
@@ -241,30 +242,58 @@ class BuildingUI:
         
         # Tipos de construcción
         building_types = list(BuildingType)
-        y_offset = panel_y + 60
         
+        # Crear superficie para el contenido scrolleable
+        content_height = len(building_types) * 60 + 100
+        scroll_surface = pygame.Surface((panel_width - 40, content_height))
+        scroll_surface.fill((30, 30, 30))
+        
+        # Dibujar tipos de construcción en la superficie de scroll
+        y_offset = 20
         for i, building_type in enumerate(building_types):
             color = (100, 100, 255) if i == self.selected_building else (200, 200, 200)
             
             # Nombre del tipo de construcción
             building_name = building_type.value.title()
             text = self.font.render(building_name, True, color)
-            screen.blit(text, (panel_x + 20, y_offset))
+            text_rect = text.get_rect(center=(scroll_surface.get_width()//2, y_offset))
+            scroll_surface.blit(text, text_rect)
             
             # Descripción
             descriptions = {
-                BuildingType.WALL: "Protección básica",
-                BuildingType.DOOR: "Entrada al refugio",
-                BuildingType.FLOOR: "Base sólida",
-                BuildingType.ROOF: "Protección superior",
-                BuildingType.FIRE: "Calor y luz"
+                BuildingType.WALL: "Protección básica contra enemigos",
+                BuildingType.DOOR: "Entrada segura al refugio",
+                BuildingType.FLOOR: "Base sólida para construcción",
+                BuildingType.ROOF: "Protección superior contra elementos",
+                BuildingType.FIRE: "Fuente de calor y luz"
             }
             
             desc_text = descriptions.get(building_type, "")
             desc_surface = self.small_font.render(desc_text, True, (150, 150, 150))
-            screen.blit(desc_surface, (panel_x + 20, y_offset + 25))
+            desc_rect = desc_surface.get_rect(center=(scroll_surface.get_width()//2, y_offset + 25))
+            scroll_surface.blit(desc_surface, desc_rect)
             
-            y_offset += 50
+            y_offset += 60
+        
+        # Aplicar scroll y dibujar contenido visible
+        visible_height = panel_height - 100
+        scroll_y = max(0, min(scroll_offset, content_height - visible_height))
+        
+        # Dibujar la parte visible del contenido
+        screen.blit(scroll_surface, (panel_x + 20, panel_y + 60), 
+                   (0, scroll_y, panel_width - 40, visible_height))
+        
+        # Dibujar indicadores de scroll si es necesario
+        if content_height > visible_height:
+            # Barra de scroll
+            scroll_bar_width = 10
+            scroll_bar_height = int((visible_height / content_height) * visible_height)
+            scroll_bar_y = panel_y + 60 + int((scroll_y / (content_height - visible_height)) * (visible_height - scroll_bar_height))
+            
+            pygame.draw.rect(screen, (100, 100, 100), 
+                           (panel_x + panel_width - 25, panel_y + 60, scroll_bar_width, visible_height))
+            pygame.draw.rect(screen, (255, 255, 255), 
+                           (panel_x + panel_width - 25, scroll_bar_y, scroll_bar_width, scroll_bar_height))
             
         # Controles
         controls = [
@@ -273,8 +302,8 @@ class BuildingUI:
             "ESC - Cerrar"
         ]
         
-        y_offset = panel_y + 20
+        y_offset = panel_y + panel_height - 80
         for control in controls:
             text = self.small_font.render(control, True, (200, 200, 200))
-            screen.blit(text, (panel_x + 250, y_offset))
+            screen.blit(text, (panel_x + 20, y_offset))
             y_offset += 20

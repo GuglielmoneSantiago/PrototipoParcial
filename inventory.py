@@ -30,6 +30,7 @@ class ItemType(Enum):
     FOOD = "food"
     WATER = "water"
     MEDICINE = "medicine"
+    MEAT = "meat"  # Carne de enemigos
     
     # Construcción
     WALL = "wall"
@@ -41,23 +42,47 @@ class Item:
     def __init__(self, item_type: ItemType, quantity: int = 1, durability: int = 100):
         self.item_type = item_type
         self.quantity = quantity
-        self.durability = durability
-        self.max_durability = durability
+        
+        # Solo las armas y herramientas tienen durabilidad
+        if self.is_weapon_or_tool():
+            self.durability = durability
+            self.max_durability = durability
+        else:
+            self.durability = None
+            self.max_durability = None
+        
+    def is_weapon_or_tool(self) -> bool:
+        """Verificar si el item es un arma o herramienta"""
+        weapons_and_tools = [
+            ItemType.SPEAR, ItemType.BOW, ItemType.AXE, 
+            ItemType.PICKAXE, ItemType.KNIFE
+        ]
+        return self.item_type in weapons_and_tools
         
     def use(self):
-        """Usar el objeto (reduce durabilidad)"""
-        if self.durability > 0:
-            self.durability -= 10
-            return True
-        return False
+        """Usar el objeto (reduce durabilidad solo si es arma/herramienta)"""
+        if self.is_weapon_or_tool():
+            if self.durability and self.durability > 0:
+                self.durability -= 10
+                return True
+            return False
+        else:
+            # Para consumibles y otros items, solo reducir cantidad
+            if self.quantity > 0:
+                self.quantity -= 1
+                return True
+            return False
         
     def is_broken(self):
-        """Verificar si el objeto está roto"""
-        return self.durability <= 0
+        """Verificar si el objeto está roto (solo para armas/herramientas)"""
+        if self.is_weapon_or_tool():
+            return self.durability is not None and self.durability <= 0
+        return False
         
     def repair(self, amount: int = 20):
-        """Reparar el objeto"""
-        self.durability = min(self.max_durability, self.durability + amount)
+        """Reparar el objeto (solo para armas/herramientas)"""
+        if self.is_weapon_or_tool() and self.durability is not None:
+            self.durability = min(self.max_durability, self.durability + amount)
 
 class Recipe:
     def __init__(self, result: ItemType, materials: Dict[ItemType, int], tool_required: Optional[ItemType] = None):
@@ -143,8 +168,8 @@ class CraftingSystem:
         recipes = []
         
         # Herramientas básicas
-        recipes.append(Recipe(ItemType.AXE, {ItemType.WOOD: 2, ItemType.STONE: 1}))
-        recipes.append(Recipe(ItemType.PICKAXE, {ItemType.WOOD: 2, ItemType.STONE: 2}))
+        recipes.append(Recipe(ItemType.AXE, {ItemType.WOOD: 10}))
+        recipes.append(Recipe(ItemType.PICKAXE, {ItemType.WOOD: 10}))
         recipes.append(Recipe(ItemType.KNIFE, {ItemType.WOOD: 1, ItemType.STONE: 1}))
         
         # Armas
@@ -196,7 +221,7 @@ class InventoryUI:
         """Abrir/cerrar inventario"""
         self.is_open = not self.is_open
         
-    def handle_input(self, event: pygame.event.Event, inventory: Inventory, crafting_system: CraftingSystem) -> Optional[ItemType]:
+    def handle_input(self, event: pygame.event.Event, inventory: Inventory, crafting_system: CraftingSystem) -> Optional[str]:
         """Manejar entrada del usuario en el inventario"""
         if not self.is_open:
             return None
@@ -207,13 +232,21 @@ class InventoryUI:
             elif event.key == pygame.K_RIGHT:
                 self.selected_slot = min(len(inventory.items) - 1, self.selected_slot + 1)
             elif event.key == pygame.K_RETURN:
-                # Usar item seleccionado
+                # Equipar item seleccionado
                 if 0 <= self.selected_slot < len(inventory.items):
                     item = inventory.items[self.selected_slot]
-                    if item.use():
-                        if item.is_broken():
-                            inventory.items.remove(item)
-                        return item.item_type
+                    
+                    # Verificar si es un arma o herramienta equipable
+                    if self.is_weapon(item.item_type):
+                        return f"equip_weapon:{item.item_type.value}"
+                    elif self.is_tool(item.item_type):
+                        return f"equip_tool:{item.item_type.value}"
+                    else:
+                        # Para otros items, usar normalmente
+                        if item.use():
+                            if item.is_broken():
+                                inventory.items.remove(item)
+                            return f"use:{item.item_type.value}"
             elif event.key == pygame.K_c:
                 # Abrir menú de crafteo
                 return "craft"
@@ -224,7 +257,17 @@ class InventoryUI:
                 
         return None
         
-    def draw(self, screen: pygame.Surface, inventory: Inventory, crafting_system: CraftingSystem):
+    def is_weapon(self, item_type: ItemType) -> bool:
+        """Verificar si un item es un arma"""
+        weapons = [ItemType.SPEAR, ItemType.BOW]
+        return item_type in weapons
+        
+    def is_tool(self, item_type: ItemType) -> bool:
+        """Verificar si un item es una herramienta"""
+        tools = [ItemType.AXE, ItemType.PICKAXE, ItemType.KNIFE]
+        return item_type in tools
+        
+    def draw(self, screen: pygame.Surface, inventory: Inventory, crafting_system: CraftingSystem, scroll_offset: int = 0):
         """Dibujar interfaz del inventario"""
         if not self.is_open:
             return
@@ -234,51 +277,78 @@ class InventoryUI:
         overlay.fill((0, 0, 0, 128))
         screen.blit(overlay, (0, 0))
         
-        # Panel del inventario
+        # Panel del inventario con caja
         panel_width = 600
-        panel_height = 400
+        panel_height = 500
         panel_x = (self.screen_width - panel_width) // 2
         panel_y = (self.screen_height - panel_height) // 2
         
-        pygame.draw.rect(screen, (50, 50, 50), (panel_x, panel_y, panel_width, panel_height))
+        # Dibujar fondo de la caja
+        pygame.draw.rect(screen, (30, 30, 30), (panel_x, panel_y, panel_width, panel_height))
         pygame.draw.rect(screen, (255, 255, 255), (panel_x, panel_y, panel_width, panel_height), 2)
         
         # Título
         title = self.font.render("INVENTARIO", True, (255, 255, 255))
         screen.blit(title, (panel_x + 20, panel_y + 20))
         
-        # Items del inventario
-        y_offset = panel_y + 60
+        # Crear superficie para el contenido scrolleable
+        content_height = len(inventory.items) * 50 + 100
+        scroll_surface = pygame.Surface((panel_width - 40, content_height))
+        scroll_surface.fill((30, 30, 30))
+        
+        # Dibujar items en la superficie de scroll
+        y_offset = 20
         for i, item in enumerate(inventory.items):
             color = (100, 100, 255) if i == self.selected_slot else (200, 200, 200)
             
             # Nombre del item
             item_name = f"{item.item_type.value.title()} x{item.quantity}"
             text = self.font.render(item_name, True, color)
-            screen.blit(text, (panel_x + 20, y_offset))
+            text_rect = text.get_rect(center=(scroll_surface.get_width()//2, y_offset))
+            scroll_surface.blit(text, text_rect)
             
-            # Durabilidad si aplica
-            if item.durability < item.max_durability:
+            # Durabilidad si aplica (solo para armas y herramientas)
+            if item.is_weapon_or_tool() and item.durability is not None and item.durability < item.max_durability:
                 durability_text = f"Durabilidad: {item.durability}/{item.max_durability}"
                 durability_color = (255, 255, 0) if item.durability > 50 else (255, 0, 0)
                 durability_surface = self.small_font.render(durability_text, True, durability_color)
-                screen.blit(durability_surface, (panel_x + 20, y_offset + 25))
+                durability_rect = durability_surface.get_rect(center=(scroll_surface.get_width()//2, y_offset + 25))
+                scroll_surface.blit(durability_surface, durability_rect)
                 
             y_offset += 50
+        
+        # Aplicar scroll y dibujar contenido visible
+        visible_height = panel_height - 100
+        scroll_y = max(0, min(scroll_offset, content_height - visible_height))
+        
+        # Dibujar la parte visible del contenido
+        screen.blit(scroll_surface, (panel_x + 20, panel_y + 60), 
+                   (0, scroll_y, panel_width - 40, visible_height))
+        
+        # Dibujar indicadores de scroll si es necesario
+        if content_height > visible_height:
+            # Barra de scroll
+            scroll_bar_width = 10
+            scroll_bar_height = int((visible_height / content_height) * visible_height)
+            scroll_bar_y = panel_y + 60 + int((scroll_y / (content_height - visible_height)) * (visible_height - scroll_bar_height))
             
+            pygame.draw.rect(screen, (100, 100, 100), 
+                           (panel_x + panel_width - 25, panel_y + 60, scroll_bar_width, visible_height))
+            pygame.draw.rect(screen, (255, 255, 255), 
+                           (panel_x + panel_width - 25, scroll_bar_y, scroll_bar_width, scroll_bar_height))
+        
         # Información de controles
         controls = [
-            "Controles:",
             "Flechas - Navegar",
             "ENTER - Usar item",
             "C - Crafteo",
             "I - Cerrar inventario"
         ]
         
-        y_offset = panel_y + 20
+        y_offset = panel_y + panel_height - 80
         for control in controls:
             text = self.small_font.render(control, True, (200, 200, 200))
-            screen.blit(text, (panel_x + 300, y_offset))
+            screen.blit(text, (panel_x + 20, y_offset))
             y_offset += 20
 
 class CraftingUI:
@@ -317,7 +387,7 @@ class CraftingUI:
                 
         return False
         
-    def draw(self, screen: pygame.Surface, inventory: Inventory, crafting_system: CraftingSystem):
+    def draw(self, screen: pygame.Surface, inventory: Inventory, crafting_system: CraftingSystem, scroll_offset: int = 0):
         """Dibujar interfaz de crafteo"""
         if not self.is_open:
             return
@@ -327,13 +397,14 @@ class CraftingUI:
         overlay.fill((0, 0, 0, 128))
         screen.blit(overlay, (0, 0))
         
-        # Panel de crafteo
-        panel_width = 500
-        panel_height = 300
+        # Panel de crafteo con caja
+        panel_width = 600
+        panel_height = 500
         panel_x = (self.screen_width - panel_width) // 2
         panel_y = (self.screen_height - panel_height) // 2
         
-        pygame.draw.rect(screen, (50, 50, 50), (panel_x, panel_y, panel_width, panel_height))
+        # Dibujar fondo de la caja
+        pygame.draw.rect(screen, (30, 30, 30), (panel_x, panel_y, panel_width, panel_height))
         pygame.draw.rect(screen, (255, 255, 255), (panel_x, panel_y, panel_width, panel_height), 2)
         
         # Título
@@ -344,14 +415,21 @@ class CraftingUI:
         available_recipes = crafting_system.get_available_recipes(inventory)
         
         if available_recipes:
-            y_offset = panel_y + 60
+            # Crear superficie para el contenido scrolleable
+            content_height = len(available_recipes) * 80 + 100
+            scroll_surface = pygame.Surface((panel_width - 40, content_height))
+            scroll_surface.fill((30, 30, 30))
+            
+            # Dibujar recetas en la superficie de scroll
+            y_offset = 20
             for i, recipe in enumerate(available_recipes):
                 color = (100, 100, 255) if i == self.selected_recipe else (200, 200, 200)
                 
                 # Nombre del resultado
                 result_name = recipe.result.value.title()
                 text = self.font.render(result_name, True, color)
-                screen.blit(text, (panel_x + 20, y_offset))
+                text_rect = text.get_rect(center=(scroll_surface.get_width()//2, y_offset))
+                scroll_surface.blit(text, text_rect)
                 
                 # Materiales requeridos
                 materials_text = "Materiales: "
@@ -359,12 +437,34 @@ class CraftingUI:
                     materials_text += f"{material.value.title()}({quantity}) "
                     
                 materials_surface = self.small_font.render(materials_text, True, (150, 150, 150))
-                screen.blit(materials_surface, (panel_x + 20, y_offset + 25))
+                materials_rect = materials_surface.get_rect(center=(scroll_surface.get_width()//2, y_offset + 30))
+                scroll_surface.blit(materials_surface, materials_rect)
                 
-                y_offset += 60
+                y_offset += 80
+            
+            # Aplicar scroll y dibujar contenido visible
+            visible_height = panel_height - 100
+            scroll_y = max(0, min(scroll_offset, content_height - visible_height))
+            
+            # Dibujar la parte visible del contenido
+            screen.blit(scroll_surface, (panel_x + 20, panel_y + 60), 
+                       (0, scroll_y, panel_width - 40, visible_height))
+            
+            # Dibujar indicadores de scroll si es necesario
+            if content_height > visible_height:
+                # Barra de scroll
+                scroll_bar_width = 10
+                scroll_bar_height = int((visible_height / content_height) * visible_height)
+                scroll_bar_y = panel_y + 60 + int((scroll_y / (content_height - visible_height)) * (visible_height - scroll_bar_height))
+                
+                pygame.draw.rect(screen, (100, 100, 100), 
+                               (panel_x + panel_width - 25, panel_y + 60, scroll_bar_width, visible_height))
+                pygame.draw.rect(screen, (255, 255, 255), 
+                               (panel_x + panel_width - 25, scroll_bar_y, scroll_bar_width, scroll_bar_height))
         else:
             no_recipes = self.font.render("No hay recetas disponibles", True, (255, 0, 0))
-            screen.blit(no_recipes, (panel_x + 20, panel_y + 60))
+            no_recipes_rect = no_recipes.get_rect(center=(panel_x + panel_width//2, panel_y + panel_height//2))
+            screen.blit(no_recipes, no_recipes_rect)
             
         # Controles
         controls = [
@@ -373,8 +473,8 @@ class CraftingUI:
             "ESC - Cerrar"
         ]
         
-        y_offset = panel_y + 20
+        y_offset = panel_y + panel_height - 80
         for control in controls:
             text = self.small_font.render(control, True, (200, 200, 200))
-            screen.blit(text, (panel_x + 300, y_offset))
+            screen.blit(text, (panel_x + 20, y_offset))
             y_offset += 20

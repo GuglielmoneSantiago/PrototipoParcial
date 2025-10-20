@@ -18,11 +18,11 @@ class Tree:
         self.width = 40
         self.height = 60
         self.tree_type = tree_type
-        self.wood_amount = random.randint(3, 8)  # Cantidad de madera disponible
+        self.wood_amount = random.randint(4, 6)  # Cantidad de madera disponible
         self.max_wood = self.wood_amount
         self.is_chopped = False
         self.regrowth_timer = 0
-        self.regrowth_time = 3000  # 50 segundos para regenerar (a 60 FPS)
+        self.regrowth_time = 6000  # 100 segundos para regenerar (a 60 FPS)
         
         # Diferentes tipos de árboles
         self.tree_colors = {
@@ -48,8 +48,8 @@ class Tree:
         if not self.can_harvest():
             return 0
             
-        # Calcular cuánta madera se puede obtener (1-3 por click)
-        harvest_amount = min(random.randint(1, 3), self.wood_amount)
+        # Calcular cuánta madera se puede obtener (1-2 por click)
+        harvest_amount = min(random.randint(1, 2), self.wood_amount)
         
         # Agregar madera al inventario
         if player_inventory.add_item(ItemType.WOOD, harvest_amount):
@@ -119,7 +119,7 @@ class TreeManager:
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.trees: List[Tree] = []
-        self.max_trees = 15
+        self.max_trees = 7
         
     def spawn_trees(self):
         """Generar árboles en el mapa"""
